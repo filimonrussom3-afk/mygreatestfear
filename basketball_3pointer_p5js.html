@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3-Pointer Basketball Shot - p5.js</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        h1 {
+            color: white;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            min-width: 500px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        
+            display: inline-block;
+            width: 150px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input[type="range"] {
+            width: 200px;
+            height: 8px;
+        }
+        
+        input[type="number"] {
+            width: 100px;
+            padding: 5px;
+            font-size: 14px;
+        }
+        
+        .value-display {
+            display: inline-block;
+            margin-left: 10px;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #764ba2;
+        }
+        
+        .stats {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            min-width: 500px;
+        }
+        
+        .stat-item {
+            display: inline-block;
+            margin: 0 20px;
+            font-size: 18px;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        
+        .stat-value {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        
+        .result {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        
+        .made {
+            color: #00c851;
+        }
+        
+        .missed {
+            color: #ff4444;
+        }
+        
+        #canvas-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏀 3-Pointer Basketball Shot Simulator</h1>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label for="velocitySlider">Velocity (m/s):</label>
+            <input type="range" id="velocitySlider" min="5" max="10" step="0.1" value="7.5">
+            <span class="value-display"><span id="velocityValue">7.5</span> m/s</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="angleSlider">Launch Angle (°):</label>
+            <input type="range" id="angleSlider" min="30" max="70" step="1" value="52">
+            <span class="value-display"><span id="angleValue">52</span>°</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="pressureSlider">Pressure Level:</label>
+            <input type="range" id="pressureSlider" min="0" max="1" step="0.1" value="0.5">
+            <span class="value-display"><span id="pressureValue">0.5</span> (0=Low, 1=Max)</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="accuracySlider">Base Accuracy:</label>
+            <input type="range" id="accuracySlider" min="0" max="1" step="0.01" value="0.35">
+            <span class="value-display"><span id="accuracyValue">0.35</span> (0‑1)</span>
+        </div>
+        
+        <div class="control-group">
+            <button id="shootBtn">🎯 SHOOT</button>
+            <button id="resetBtn">↻ RESET</button>
+            <button id="autoBtn">⚡ AUTO-OPTIMAL</button>
+        </div>
+    </div>
+    
+    <div id="canvas-container"></div>
+    
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-label">Made</div>
+            <div class="stat-value"><span id="shotsMade">0</span></div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Attempts</div>
+            <div class="stat-value"><span id="shotAttempts">0</span></div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">3P %</div>
+            <div class="stat-value"><span id="threePointPct">0</span>%</div>
+        </div>
+        <div id="resultDisplay"></div>
+    </div>
+
+    <script>
+        let canvasWidth = 800;
+        let canvasHeight = 500;
+        let ballTrajectory = [];
+        let isSimulating = false;
+        let lastResult = null;
+        
+        // Game stats
+        let shotsMade = 0;
+        let shotAttempts = 0;
+        
+        // Player shooting attributes
+        let baseAccuracy = 0.35; // default 35%
+        
+        // Physics constants
+        const GRAVITY = 9.81;
+        const HOOP_HEIGHT = 3.05;
+        const THREE_POINT_DISTANCE = 7.24;
+        const RELEASE_HEIGHT = 2.2;
+        
+        // Scale for visualization (pixels per meter)
+        const SCALE = 50;
+        const PLAYER_X = 100;
+        const PLAYER_Y = canvasHeight - 80;
+        const HOOP_X = PLAYER_X + THREE_POINT_DISTANCE * SCALE;
+        const HOOP_Y = canvasHeight - (HOOP_HEIGHT * SCALE);
+        
+        function setup() {
+            let container = document.getElementById('canvas-container');
+            let canvas = createCanvas(canvasWidth, canvasHeight);
+            canvas.parent('canvas-container');
+        }
+        
+        function draw() {
+            // Draw court
+            background(194, 178, 128); // Wood color
+            drawCourt();
+            drawHoop();
+            drawPlayer();
+            
+            // Draw trajectory if simulating
+            if (isSimulating && ballTrajectory.length > 0) {
+                drawBallTrajectory();
+                drawBall();
+            }
+        }
+        
+        function drawCourt() {
+            // Court lines
+            stroke(255);
+            strokeWeight(2);
+            
+            // Three-point line (simplified)
+            line(PLAYER_X + THREE_POINT_DISTANCE * SCALE, 0, 
+                 PLAYER_X + THREE_POINT_DISTANCE * SCALE, canvasHeight);
+            
+            // Free throw line
+            line(PLAYER_X + 4.9 * SCALE, 0, 
+                 PLAYER_X + 4.9 * SCALE, canvasHeight);
+            
+            // Half court
+            line(0, canvasHeight / 2, canvasWidth, canvasHeight / 2);
+        }
+        
+        function drawHoop() {
+            // Backboard
+            fill(255, 200, 100);
+            rect(HOOP_X - 60, HOOP_Y - 40, 120, 80);
+            
+            // Rim
+            stroke(255, 100, 0);
+            strokeWeight(8);
+            noFill();
+            line(HOOP_X - 20, HOOP_Y, HOOP_X + 20, HOOP_Y);
+            
+            // Net
+            stroke(255);
+            strokeWeight(2);
+            for (let i = -20; i <= 20; i += 4) {
+                line(HOOP_X + i, HOOP_Y, HOOP_X + i - 15, HOOP_Y + 30);
+            }
+        }
+        
+        function drawPlayer() {
+            // Player circle
+            fill(100, 150, 255);
+            stroke(0);
+            strokeWeight(2);
+            circle(PLAYER_X, PLAYER_Y, 30);
+            
+            // Release point indicator
+            fill(255, 255, 0);
+            circle(PLAYER_X, PLAYER_Y - 40, 15);
+            
+            // Default text
+            fill(0);
+            textAlign(CENTER);
+            textSize(12);
+            text("PLAYER", PLAYER_X, PLAYER_Y + 30);
+        }
+        
+        function drawBall() {
+            if (ballTrajectory.length > 0) {
+                let pos = ballTrajectory[ballTrajectory.length - 1];
+                fill(255, 100, 0);
+                stroke(200, 50, 0);
+                strokeWeight(2);
+                circle(pos.x, pos.y, 12);
+            }
+        }
+        
+        function drawBallTrajectory() {
+            stroke(255, 200, 0);
+            strokeWeight(2);
+            
+            for (let i = 0; i < ballTrajectory.length - 1; i++) {
+                let p1 = ballTrajectory[i];
+                let p2 = ballTrajectory[i + 1];
+                line(p1.x, p1.y, p2.x, p2.y);
+            }
+            
+            // Draw trajectory points
+            for (let i = 0; i < ballTrajectory.length; i += 5) {
+                fill(255, 200, 0);
+                noStroke();
+                circle(ballTrajectory[i].x, ballTrajectory[i].y, 3);
+            }
+        }
+        
+        function calculateTrajectory(velocity, angle) {
+            let angleRad = radians(angle);
+            let vx = velocity * cos(angleRad);
+            let vy = velocity * sin(angleRad);
+            
+            ballTrajectory = [];
+            let t = 0;
+            let dt = 0.01;
+            let maxTime = 2;
+            
+            let madeShot = false;
+            
+            while (t < maxTime) {
+                let x = PLAYER_X + vx * t * SCALE;
+                let y = PLAYER_Y - (RELEASE_HEIGHT * SCALE + vy * t * SCALE - 0.5 * GRAVITY * t * t * SCALE);
+                
+                ballTrajectory.push({ x: x, y: y });
+                
+                // Check if ball reached hoop
+                if (x > HOOP_X - 20 && x < HOOP_X + 20) {
+                    let heightDiff = abs(y - HOOP_Y);
+                    if (heightDiff < 15) { // Hoop tolerance in pixels
+                        madeShot = true;
+                    }
+                }
+                
+                // Stop if ball goes out of bounds
+                if (x > canvasWidth || y > canvasHeight) {
+                    break;
+                }
+                
+                t += dt;
+            }
+            
+            return madeShot;
+        }
+        
+        function shootBasket() {
+            if (isSimulating) return;
+            
+            // pull parameters from UI
+            let velocity = parseFloat(document.getElementById('velocitySlider').value);
+            let angle = parseFloat(document.getElementById('angleSlider').value);
+            let pressure = parseFloat(document.getElementById('pressureSlider').value);
+            baseAccuracy = parseFloat(document.getElementById('accuracySlider').value);
+            
+            // apply random variance based on pressure (mimics human error)
+            let velVar = randomGaussian(0, 0.3 * (1 + pressure));
+            let angVar = randomGaussian(0, 2 * (1 + pressure));
+            let actualV = velocity + velVar;
+            let actualA = angle + angVar;
+
+            // adjust accuracy with pressure penalty
+            let pressurePenalty = pressure * 0.15;
+            let adjustedAccuracy = Math.max(0, baseAccuracy - pressurePenalty);
+            
+            isSimulating = true;
+            let madeShot;
+            // first chance: roll against accuracy
+            if (random() < adjustedAccuracy) {
+                madeShot = true;
+            } else {
+                // fallback to physics check (ball may still go in)
+                madeShot = calculateTrajectory(actualV, actualA);
+            }
+            
+            shotAttempts++;
+            if (madeShot) {
+                shotsMade++;
+                lastResult = 'MADE ✓';
+                document.getElementById('resultDisplay').innerHTML = 
+                    '<div class="result made">✓ SHOT MADE!</div>';
+            } else {
+                lastResult = 'MISSED ✗';
+                document.getElementById('resultDisplay').innerHTML = 
+                    '<div class="result missed">✗ SHOT MISSED</div>';
+            }
+            
+            updateStats();
+            
+            setTimeout(() => {
+                isSimulating = false;
+            }, 2000);
+        }
+        
+        function resetGame() {
+            ballTrajectory = [];
+            isSimulating = false;
+            lastResult = null;
+            shotsMade = 0;
+            shotAttempts = 0;
+            updateStats();
+            document.getElementById('resultDisplay').innerHTML = '';
+        }
+        
+        function autoOptimal() {
+            // simple grid search for a velocity/angle pair that makes the shot
+            let best = {v:7.5, a:52};
+            outer: for (let v = 5; v <= 10; v += 0.1) {
+                for (let a = 30; a <= 70; a += 1) {
+                    if (calculateTrajectory(v, a)) {
+                        best.v = v;
+                        best.a = a;
+                        break outer;
+                    }
+                }
+            }
+            document.getElementById('velocitySlider').value = best.v;
+            document.getElementById('angleSlider').value = best.a;
+            document.getElementById('pressureSlider').value = 0;
+            updateSliders();
+            shootBasket();
+        }
+        
+        function updateStats() {
+            document.getElementById('shotsMade').textContent = shotsMade;
+            document.getElementById('shotAttempts').textContent = shotAttempts;
+            
+            if (shotAttempts > 0) {
+                let percentage = Math.round((shotsMade / shotAttempts) * 100);
+                document.getElementById('threePointPct').textContent = percentage;
+            } else {
+                document.getElementById('threePointPct').textContent = 0;
+            }
+        }
+        
+        function updateSliders() {
+            document.getElementById('velocityValue').textContent = 
+                parseFloat(document.getElementById('velocitySlider').value).toFixed(1);
+            document.getElementById('angleValue').textContent = 
+                document.getElementById('angleSlider').value;
+            document.getElementById('pressureValue').textContent = 
+                parseFloat(document.getElementById('pressureSlider').value).toFixed(1);
+            document.getElementById('accuracyValue').textContent = 
+                parseFloat(document.getElementById('accuracySlider').value).toFixed(2);
+        }
+        
+        // Event listeners
+        document.getElementById('shootBtn').addEventListener('click', shootBasket);
+        document.getElementById('resetBtn').addEventListener('click', resetGame);
+        document.getElementById('autoBtn').addEventListener('click', autoOptimal);
+        
+        document.getElementById('velocitySlider').addEventListener('input', updateSliders);
+        document.getElementById('angleSlider').addEventListener('input', updateSliders);
+        document.getElementById('pressureSlider').addEventListener('input', updateSliders);
+        
+        // Initial setup
+        updateSliders();
+        updateStats();
+    </script>
+</body>
+</html>
