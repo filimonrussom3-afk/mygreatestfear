@@ -21,15 +21,19 @@ class ThreePointerSimulation:
         self.base_accuracy = base_accuracy
         self.shots_taken = 0
         self.shots_made = 0
+        # keep track of where shots crossed the hoop plane
+        self.shot_chart = []
         
-    def calculate_trajectory(self, initial_velocity, launch_angle, release_height=2.2):
+    def calculate_trajectory(self, initial_velocity, launch_angle, release_height=2.2, wind=0):
         """
-        Calculate if the shot makes it based on physics.
+        Calculate if the shot makes it based on physics, optionally including a horizontal
+        wind component (positive blows toward hoop).
         
         Args:
             initial_velocity: Speed of the ball (m/s)
             launch_angle: Angle in degrees
             release_height: Height from which ball is released (meters)
+            wind: horizontal wind speed in m/s (added to vx)
             
         Returns:
             tuple: (makes_shot: bool, trajectory_data: dict)
@@ -42,12 +46,19 @@ class ThreePointerSimulation:
         if vx == 0:
             return False, {"error": "Horizontal velocity is zero"}
         
-        time_to_hoop = self.THREE_POINT_DISTANCE / vx
+        # apply wind to horizontal speed
+        effective_vx = vx + wind
+        # avoid zero division
+        if effective_vx == 0:
+            return False, {"error": "Horizontal velocity is zero"}
+        time_to_hoop = self.THREE_POINT_DISTANCE / effective_vx
         
         # Height at the hoop distance
         y_at_hoop = (release_height + 
                      vy * time_to_hoop - 
                      0.5 * self.GRAVITY * time_to_hoop ** 2)
+        # record location for shot chart (distance travelled horizontally)
+        self.shot_chart.append((self.THREE_POINT_DISTANCE, y_at_hoop))
         
         # Check if ball reaches hoop height (within tolerance)
         height_tolerance = 0.15  # 15 cm tolerance
@@ -62,12 +73,13 @@ class ThreePointerSimulation:
         
         return makes_shot, trajectory_data
     
-    def take_shot(self, pressure_level=0.5):
+    def take_shot(self, pressure_level=0.5, wind=0):
         """
         Simulate a shot with player tendency and pressure effects.
         
         Args:
             pressure_level: 0-1 scale (0 = no pressure, 1 = maximum pressure)
+            wind: horizontal wind speed m/s
             
         Returns:
             dict: Shot result details
@@ -94,8 +106,8 @@ class ThreePointerSimulation:
             makes_shot = True
             self.shots_made += 1
         else:
-            # Still calculate trajectory for missed shots
-            makes_shot, _ = self.calculate_trajectory(velocity, angle)
+            # Still calculate trajectory for missed shots (includes wind)
+            makes_shot, _ = self.calculate_trajectory(velocity, angle, wind=wind)
             if makes_shot:
                 self.shots_made += 1
         
@@ -113,20 +125,21 @@ class ThreePointerSimulation:
         
         return result
     
-    def take_multiple_shots(self, num_shots=10, pressure_level=0.5):
+    def take_multiple_shots(self, num_shots=10, pressure_level=0.5, wind=0):
         """
         Simulate multiple shots.
         
         Args:
             num_shots: Number of shots to take
             pressure_level: 0-1 scale
+            wind: horizontal wind speed m/s
             
         Returns:
             list: Results of all shots
         """
         results = []
         for _ in range(num_shots):
-            result = self.take_shot(pressure_level)
+            result = self.take_shot(pressure_level, wind=wind)
             results.append(result)
         
         return results
@@ -142,17 +155,18 @@ if __name__ == "__main__":
     print(f"Player: {player.player_name}")
     print(f"Base 3P%: {player.base_accuracy * 100}%\n")
     
-    # Simulate game situation
+    # Simulate game situation with a bit of wind
     print("=" * 60)
-    print("REGULAR SITUATION (Low Pressure)")
+    print("REGULAR SITUATION (Low Pressure, slight tailwind)")
     print("=" * 60)
-    results_low = player.take_multiple_shots(num_shots=5, pressure_level=0.2)
+    results_low = player.take_multiple_shots(num_shots=5, pressure_level=0.2, wind=0.5)
     
     for result in results_low:
         status = "✓ MADE!" if result["made"] else "✗ MISSED"
         print(f"Shot {result['shot_number']}: {status}")
         print(f"  Velocity: {result['velocity']} m/s | Angle: {result['angle']}°")
         print(f"  Season Record: {result['three_pointers']}/{result['attempts']} ({result['percentage']}%)\n")
+    print("Shot chart (horizontal dist, height):", player.shot_chart)
     
     # Reset for high pressure scenario
     player2 = ThreePointerSimulation("LeBron James", base_accuracy=0.40)
@@ -160,7 +174,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print("CLUTCH SITUATION (High Pressure - Finals)")
     print("=" * 60)
-    results_high = player2.take_multiple_shots(num_shots=5, pressure_level=0.8)
+    results_high = player2.take_multiple_shots(num_shots=5, pressure_level=0.8, wind=-1.0)
+    print("Shot chart (horizontal dist, height):", player2.shot_chart)
     
     for result in results_high:
         status = "✓ MADE!" if result["made"] else "✗ MISSED"

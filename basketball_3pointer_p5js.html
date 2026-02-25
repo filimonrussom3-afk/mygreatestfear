@@ -36,7 +36,7 @@
             margin-bottom: 15px;
         }
         
-        
+        label {
             display: inline-block;
             width: 150px;
             font-weight: bold;
@@ -156,6 +156,12 @@
         </div>
         
         <div class="control-group">
+            <label for="windSlider">Wind (m/s):</label>
+            <input type="range" id="windSlider" min="-3" max="3" step="0.1" value="0">
+            <span class="value-display"><span id="windValue">0.0</span></span>
+        </div>
+        
+        <div class="control-group">
             <button id="shootBtn">🎯 SHOOT</button>
             <button id="resetBtn">↻ RESET</button>
             <button id="autoBtn">⚡ AUTO-OPTIMAL</button>
@@ -190,21 +196,32 @@
         // Game stats
         let shotsMade = 0;
         let shotAttempts = 0;
-        
+
         // Player shooting attributes
         let baseAccuracy = 0.35; // default 35%
-        
+        let windSpeed = 0;
+
+        // Movement
+        let playerX = 100;
+        let playerY = canvasHeight - 80;
+        let moveLeft = false;
+        let moveRight = false;
+
+        // Shot chart data
+        let shotChartPoints = [];
+        let chartCaptured = false;
+        let shotPoint = null;
+
         // Physics constants
         const GRAVITY = 9.81;
         const HOOP_HEIGHT = 3.05;
         const THREE_POINT_DISTANCE = 7.24;
         const RELEASE_HEIGHT = 2.2;
-        
+
         // Scale for visualization (pixels per meter)
         const SCALE = 50;
-        const PLAYER_X = 100;
-        const PLAYER_Y = canvasHeight - 80;
-        const HOOP_X = PLAYER_X + THREE_POINT_DISTANCE * SCALE;
+        // hoop coordinates will be recalculated each frame based on playerX
+        // playerX variable holds the horizontal position
         const HOOP_Y = canvasHeight - (HOOP_HEIGHT * SCALE);
         
         function setup() {
@@ -212,13 +229,33 @@
             let canvas = createCanvas(canvasWidth, canvasHeight);
             canvas.parent('canvas-container');
         }
+
+        function keyPressed() {
+            if (keyCode === LEFT_ARROW) moveLeft = true;
+            if (keyCode === RIGHT_ARROW) moveRight = true;
+        }
+
+        function keyReleased() {
+            if (keyCode === LEFT_ARROW) moveLeft = false;
+            if (keyCode === RIGHT_ARROW) moveRight = false;
+        }
         
         function draw() {
+            // update moving player
+            if (moveLeft) playerX = max(50, playerX - 5);
+            if (moveRight) playerX = min(canvasWidth - 50, playerX + 5);
+
+            // recalc hoop position based on playerX
+            HOOP_X = playerX + THREE_POINT_DISTANCE * SCALE;
+
             // Draw court
             background(194, 178, 128); // Wood color
             drawCourt();
             drawHoop();
             drawPlayer();
+
+            // draw previous shots
+            drawShotChart();
             
             // Draw trajectory if simulating
             if (isSimulating && ballTrajectory.length > 0) {
@@ -233,12 +270,12 @@
             strokeWeight(2);
             
             // Three-point line (simplified)
-            line(PLAYER_X + THREE_POINT_DISTANCE * SCALE, 0, 
-                 PLAYER_X + THREE_POINT_DISTANCE * SCALE, canvasHeight);
+            line(playerX + THREE_POINT_DISTANCE * SCALE, 0, 
+                 playerX + THREE_POINT_DISTANCE * SCALE, canvasHeight);
             
             // Free throw line
-            line(PLAYER_X + 4.9 * SCALE, 0, 
-                 PLAYER_X + 4.9 * SCALE, canvasHeight);
+            line(playerX + 4.9 * SCALE, 0, 
+                 playerX + 4.9 * SCALE, canvasHeight);
             
             // Half court
             line(0, canvasHeight / 2, canvasWidth, canvasHeight / 2);
@@ -268,17 +305,17 @@
             fill(100, 150, 255);
             stroke(0);
             strokeWeight(2);
-            circle(PLAYER_X, PLAYER_Y, 30);
+            circle(playerX, PLAYER_Y, 30);
             
             // Release point indicator
             fill(255, 255, 0);
-            circle(PLAYER_X, PLAYER_Y - 40, 15);
+            circle(playerX, PLAYER_Y - 40, 15);
             
             // Default text
             fill(0);
             textAlign(CENTER);
             textSize(12);
-            text("PLAYER", PLAYER_X, PLAYER_Y + 30);
+            text("PLAYER", playerX, PLAYER_Y + 30);
         }
         
         function drawBall() {
@@ -310,6 +347,8 @@
         }
         
         function calculateTrajectory(velocity, angle) {
+            // update hoop reference
+            HOOP_X = playerX + THREE_POINT_DISTANCE * SCALE;
             let angleRad = radians(angle);
             let vx = velocity * cos(angleRad);
             let vy = velocity * sin(angleRad);
@@ -320,18 +359,26 @@
             let maxTime = 2;
             
             let madeShot = false;
+            chartCaptured = false;
+            shotPoint = null;
             
             while (t < maxTime) {
-                let x = PLAYER_X + vx * t * SCALE;
-                let y = PLAYER_Y - (RELEASE_HEIGHT * SCALE + vy * t * SCALE - 0.5 * GRAVITY * t * t * SCALE);
+                // include wind effect on horizontal speed
+                let x = playerX + (vx + windSpeed) * t * SCALE;
+                let y = playerY - (RELEASE_HEIGHT * SCALE + vy * t * SCALE - 0.5 * GRAVITY * t * t * SCALE);
                 
                 ballTrajectory.push({ x: x, y: y });
                 
-                // Check if ball reached hoop
+                // Check if ball reached hoop region
                 if (x > HOOP_X - 20 && x < HOOP_X + 20) {
                     let heightDiff = abs(y - HOOP_Y);
                     if (heightDiff < 15) { // Hoop tolerance in pixels
                         madeShot = true;
+                    }
+                    // capture shot chart point the first time we cross the hoop plane
+                    if (!chartCaptured) {
+                        chartCaptured = true;
+                        shotPoint = {x: x, y: y};
                     }
                 }
                 
@@ -386,6 +433,10 @@
                 document.getElementById('resultDisplay').innerHTML = 
                     '<div class="result missed">✗ SHOT MISSED</div>';
             }
+            // add to shot chart if we recorded a point
+            if (shotPoint) {
+                shotChartPoints.push({x: shotPoint.x, y: shotPoint.y, made: madeShot});
+            }
             
             updateStats();
             
@@ -419,6 +470,7 @@
             document.getElementById('velocitySlider').value = best.v;
             document.getElementById('angleSlider').value = best.a;
             document.getElementById('pressureSlider').value = 0;
+            document.getElementById('windSlider').value = 0;
             updateSliders();
             shootBasket();
         }
@@ -444,6 +496,8 @@
                 parseFloat(document.getElementById('pressureSlider').value).toFixed(1);
             document.getElementById('accuracyValue').textContent = 
                 parseFloat(document.getElementById('accuracySlider').value).toFixed(2);
+            document.getElementById('windValue').textContent = 
+                parseFloat(document.getElementById('windSlider').value).toFixed(1);
         }
         
         // Event listeners
@@ -454,10 +508,20 @@
         document.getElementById('velocitySlider').addEventListener('input', updateSliders);
         document.getElementById('angleSlider').addEventListener('input', updateSliders);
         document.getElementById('pressureSlider').addEventListener('input', updateSliders);
+        document.getElementById('windSlider').addEventListener('input', updateSliders);
         
         // Initial setup
         updateSliders();
         updateStats();
+
+        // shot chart renderer
+        function drawShotChart() {
+            for (let pt of shotChartPoints) {
+                noStroke();
+                fill(pt.made ? 'rgba(0,200,0,0.8)' : 'rgba(200,0,0,0.8)');
+                circle(pt.x, pt.y, 6);
+            }
+        }
     </script>
 </body>
 </html>
